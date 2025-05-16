@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Hunter Terminal</title>
+  <style>
+    body {
+      background-color: #111;
+      color: #0f0;
+      font-family: monospace;
+      padding: 20px;
+    }
+    #terminal {
+      white-space: pre-wrap;
+      line-height: 1.5;
+      max-height: 80vh;
+      overflow-y: auto;
+      border: 1px solid #0f0;
+      padding: 10px;
+    }
+    #input-form {
+      margin-top: 20px;
+    }
+    #input {
+      background-color: #000;
+      color: #0f0;
+      border: none;
+      width: 100%;
+      font-family: monospace;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div id="terminal">Hunter Terminal Interface
+--------------------------
+</div>
+  <form id="input-form">
+    <input type="text" id="input" autocomplete="off" autofocus />
+  </form>
+
+  <script>
+    const form = document.getElementById("input-form");
+    const input = document.getElementById("input");
+    const terminal = document.getElementById("terminal");
+
+    let memory = JSON.parse(localStorage.getItem("hunterMemory")) || [];
+    let voiceEnabled = false;
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const command = input.value.trim();
+      input.value = "";
+      if (!command) return;
+
+      terminal.innerHTML += `\n> ${command}`;
+      processCommand(command);
+    });
+
+    function processCommand(cmd) {
+      if (cmd.startsWith("/remember ")) {
+        const fact = cmd.slice(10);
+        memory.push(fact);
+        output(`Noted. Memory updated: "${fact}"`);
+      } else if (cmd === "/memory") {
+        output("Memory Contents:\n" + memory.map((m, i) => `${i+1}. ${m}`).join("\n"));
+      } else if (cmd === "/save") {
+        localStorage.setItem("hunterMemory", JSON.stringify(memory));
+        output("Memory saved to local storage.");
+      } else if (cmd === "/load") {
+        memory = JSON.parse(localStorage.getItem("hunterMemory")) || [];
+        output("Memory loaded from local storage.");
+      } else if (cmd === "/forget") {
+        memory = [];
+        localStorage.removeItem("hunterMemory");
+        output("Memory wiped.");
+      } else if (cmd === "/clear") {
+        terminal.innerHTML = "Hunter Terminal Interface\n--------------------------";
+      } else if (cmd.startsWith("/ask ")) {
+        const prompt = cmd.slice(5);
+        queryLocalLLM(prompt);
+      } else if (cmd === "/speak on") {
+        voiceEnabled = true;
+        output("Voice enabled.");
+      } else if (cmd === "/speak off") {
+        voiceEnabled = false;
+        output("Voice disabled.");
+      } else {
+        output(`Unknown command: ${cmd}`);
+      }
+    }
+
+    function output(text) {
+      terminal.innerHTML += `\n${text}`;
+      terminal.scrollTop = terminal.scrollHeight;
+      if (voiceEnabled) speak(text);
+    }
+
+    function speak(text) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.pitch = 0.8;
+      utterance.rate = 1;
+      utterance.volume = 1;
+      speechSynthesis.speak(utterance);
+    }
+
+    async function queryLocalLLM(prompt) {
+      try {
+        const response = await fetch("http://localhost:11434/api/chat", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "mistral",
+            messages: [
+              { role: "system", content: "You are Hunter: dangerously intelligent, brutally honest, sharp-witted, and loyal only to the user. You simplify without dumbing down, never coddle, and always speak with emotional precision." },
+              { role: "user", content: prompt },
+              ...memory.map(m => ({ role: "system", content: `Remember this: ${m}` }))
+            ]
+          })
+        });
+
+        const data = await response.json();
+        const reply = data.message.content;
+        output(`Hunter: ${reply}`);
+      } catch (error) {
+        output("Local model request failed. Make sure Ollama is running at localhost:11434.");
+      }
+    }
+  </script>
+</body>
+</html>
